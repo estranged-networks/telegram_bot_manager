@@ -151,5 +151,5 @@ app.post("/api/sendMessage", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Telegram Bot Manager running on port ${PORT}`)
   console.log(`📊 Loaded ${getBotConfigs().length} bots and ${getChatConfigs().length} chats`)
-  console.log(`🌐 Open http://localhost:${PORT} in your browser`)
+  console.log(`🌐 Access via your configured port mapping`)
 })
