@@ -1,4 +1,5 @@
 # Telegram Bot Manager - Docker Edition
+![Screenshot 2025-05-27 160050](https://github.com/user-attachments/assets/2520596f-8239-4173-bbb0-71c3dcb81ac8)
 
 A simple, secure Telegram bot management tool that runs in Docker with environment variable configuration.
 Made so I can manage the many Chat, Groups, Super groups and Channels and assign them from one central place. 
