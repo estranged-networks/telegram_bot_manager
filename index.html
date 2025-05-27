@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Bot Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto p-6 max-w-4xl">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold mb-2 flex items-center gap-2">
+                <i class="fas fa-robot text-blue-600"></i>
+                Telegram Bot Manager
+            </h1>
+            <p class="text-gray-600">Securely manage your Telegram bots with Docker</p>
+            <div class="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p class="text-sm text-green-800">
+                    <i class="fas fa-shield-alt mr-1"></i>
+                    <strong>Secure:</strong> Bot tokens are stored in environment variables and never exposed to the browser.
+                </p>
+            </div>
+        </div>
+
+        <!-- Bot and Chat Selection -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Bot Selection -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <i class="fas fa-robot text-blue-600"></i>
+                    Select Bot
+                </h3>
+                <div id="botList" class="space-y-2">
+                    <!-- Bots will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Chat Selection -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <i class="fas fa-comments text-green-600"></i>
+                    Select Chat
+                </h3>
+                <div id="chatList" class="space-y-2">
+                    <!-- Chats will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Commands Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                <i class="fas fa-terminal text-purple-600"></i>
+                Commands
+            </h3>
+            
+            <div class="flex flex-wrap gap-3 mb-4">
+                <button onclick="getUpdates()" id="getUpdatesBtn"
+                        class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    <i class="fas fa-sync-alt mr-1"></i> Get Updates
+                </button>
+                
+                <button onclick="sendMessage()" id="sendMessageBtn"
+                        class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    <i class="fas fa-paper-plane mr-1"></i> Send Message
+                </button>
+            </div>
+
+            <!-- Custom Message Input -->
+            <div class="mb-4">
+                <label for="customMessage" class="block text-sm font-medium text-gray-700 mb-2">Custom Message</label>
+                <textarea id="customMessage" rows="3" 
+                          placeholder="Enter your message here..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">Hello! This is a test message from your bot.</textarea>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="bg-white rounded-lg shadow-md p-6 hidden">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                <i class="fas fa-code text-indigo-600"></i>
+                Response
+            </h3>
+            <pre id="results" class="bg-gray-100 p-4 rounded-md overflow-auto text-sm whitespace-pre-wrap"></pre>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+            <div class="bg-white p-6 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-spinner fa-spin text-blue-600"></i>
+                    <span>Processing request...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts -->
+        <div id="errorAlert" class="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded hidden z-50">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="errorMessage"></span>
+                <button onclick="hideError()" class="ml-2">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="successAlert" class="fixed top-4 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded hidden z-50">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-check-circle"></i>
+                <span id="successMessage"></span>
+                <button onclick="hideSuccess()" class="ml-2">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration injected from server
+        const BOTS = {{BOTS_CONFIG}};
+        const CHATS = {{CHATS_CONFIG}};
+        
+        // Global state
+        let selectedBot = null;
+        let selectedChat = null;
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            loadBots();
+            loadChats();
+            updateButtonStates();
+        });
+
+        function loadBots() {
+            const botList = document.getElementById('botList');
+            
+            if (BOTS.length === 0) {
+                botList.innerHTML = '<p class="text-gray-500">No bots configured in environment variables</p>';
+                return;
+            }
+
+            botList.innerHTML = '';
+            
+            BOTS.forEach(bot => {
+                const botElement = document.createElement('div');
+                botElement.className = 'flex items-center p-3 border border-gray-200 rounded-md';
+                
+                botElement.innerHTML = `
+                    <label class="flex items-center cursor-pointer flex-1">
+                        <input type="radio" name="selectedBot" value="${bot.id}" 
+                               onchange="selectBot('${bot.id}')" class="mr-3">
+                        <div>
+                            <div class="font-medium">${escapeHtml(bot.name)}</div>
+                            <div class="text-sm text-gray-500 font-mono">${bot.obfuscatedToken}</div>
+                        </div>
+                    </label>
+                `;
+                
+                botList.appendChild(botElement);
+            });
+
+            // Auto-select first bot
+            if (BOTS.length > 0) {
+                selectedBot = BOTS[0].id;
+                document.querySelector(`input[value="${selectedBot}"]`).checked = true;
+                updateButtonStates();
+            }
+        }
+
+        function loadChats() {
+            const chatList = document.getElementById('chatList');
+            
+            if (CHATS.length === 0) {
+                chatList.innerHTML = '<p class="text-gray-500">No chats configured in environment variables</p>';
+                return;
+            }
+
+            chatList.innerHTML = '';
+            
+            CHATS.forEach(chat => {
+                const chatElement = document.createElement('div');
+                chatElement.className = 'flex items-center p-3 border border-gray-200 rounded-md';
+                
+                chatElement.innerHTML = `
+                    <label class="flex items-center cursor-pointer flex-1">
+                        <input type="radio" name="selectedChat" value="${chat.id}" 
+                               onchange="selectChat('${chat.id}')" class="mr-3">
+                        <div>
+                            <div class="font-medium">${escapeHtml(chat.name)}</div>
+                            <div class="text-sm text-gray-500 font-mono">${escapeHtml(chat.id)}</div>
+                        </div>
+                    </label>
+                `;
+                
+                chatList.appendChild(chatElement);
+            });
+
+            // Auto-select first chat
+            if (CHATS.length > 0) {
+                selectedChat = CHATS[0].id;
+                document.querySelector(`input[value="${selectedChat}"]`).checked = true;
+                updateButtonStates();
+            }
+        }
+
+        function selectBot(botId) {
+            selectedBot = botId;
+            updateButtonStates();
+        }
+
+        function selectChat(chatId) {
+            selectedChat = chatId;
+            updateButtonStates();
+        }
+
+        function updateButtonStates() {
+            const getUpdatesBtn = document.getElementById('getUpdatesBtn');
+            const sendMessageBtn = document.getElementById('sendMessageBtn');
+
+            getUpdatesBtn.disabled = !selectedBot;
+            sendMessageBtn.disabled = !selectedBot || !selectedChat;
+        }
+
+        async function getUpdates() {
+            if (!selectedBot) {
+                showError('Please select a bot');
+                return;
+            }
+
+            showLoading();
+
+            try {
+                const response = await fetch('/api/getUpdates', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ botId: selectedBot })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to get updates');
+                }
+
+                showResults(result.data);
+                showSuccess('Updates retrieved successfully');
+            } catch (error) {
+                showError('Error getting updates: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function sendMessage() {
+            if (!selectedBot || !selectedChat) {
+                showError('Please select both a bot and a chat');
+                return;
+            }
+
+            const message = document.getElementById('customMessage').value.trim();
+            if (!message) {
+                showError('Please enter a message');
+                return;
+            }
+
+            showLoading();
+
+            try {
+                const response = await fetch('/api/sendMessage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        botId: selectedBot,
+                        chatId: selectedChat,
+                        message: message
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to send message');
+                }
+
+                showResults(result.data);
+                showSuccess('Message sent successfully');
+            } catch (error) {
+                showError('Error sending message: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Utility functions
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showResults(data) {
+            const resultsSection = document.getElementById('resultsSection');
+            const results = document.getElementById('results');
+
+            results.textContent = JSON.stringify(data, null, 2);
+            resultsSection.classList.remove('hidden');
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showLoading() {
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        function showError(message) {
+            const errorAlert = document.getElementById('errorAlert');
+            const errorMessage = document.getElementById('errorMessage');
+
+            errorMessage.textContent = message;
+            errorAlert.classList.remove('hidden');
+            setTimeout(hideError, 5000);
+        }
+
+        function hideError() {
+            document.getElementById('errorAlert').classList.add('hidden');
+        }
+
+        function showSuccess(message) {
+            const successAlert = document.getElementById('successAlert');
+            const successMessage = document.getElementById('successMessage');
+
+            successMessage.textContent = message;
+            successAlert.classList.remove('hidden');
+            setTimeout(hideSuccess, 3000);
+        }
+
+        function hideSuccess() {
+            document.getElementById('successAlert').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
