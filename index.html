@@ -126,6 +126,8 @@
         // Global state
         let selectedBot = null;
         let selectedChat = null;
+        let chatPhotos = {};
+        let chatErrors = {};
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', () => {
@@ -167,6 +169,7 @@
                 selectedBot = BOTS[0].id;
                 document.querySelector(`input[value="${selectedBot}"]`).checked = true;
                 updateButtonStates();
+                loadChatPhotos(); // Load photos when bot is selected
             }
         }
 
@@ -188,9 +191,19 @@
                     <label class="flex items-center cursor-pointer flex-1">
                         <input type="radio" name="selectedChat" value="${chat.id}" 
                                onchange="selectChat('${chat.id}')" class="mr-3">
-                        <div>
-                            <div class="font-medium">${escapeHtml(chat.name)}</div>
-                            <div class="text-sm text-gray-500 font-mono">${escapeHtml(chat.id)}</div>
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden" id="chatPhotoContainer_${chat.id}">
+                                <img id="chatPhoto_${chat.id}" alt="" 
+                                     class="w-full h-full object-cover hidden" 
+                                     crossorigin="anonymous"
+                                     onload="this.classList.remove('hidden'); document.getElementById('chatPhotoFallback_${chat.id}').classList.add('hidden');"
+                                     onerror="console.error('Failed to load image for chat ${chat.id}:', this.src); this.classList.add('hidden'); document.getElementById('chatPhotoFallback_${chat.id}').classList.remove('hidden');">
+                                <i class="fas fa-users text-gray-400" id="chatPhotoFallback_${chat.id}"></i>
+                            </div>
+                            <div>
+                                <div class="font-medium">${escapeHtml(chat.name)}</div>
+                                <div class="text-sm text-gray-500 font-mono">${escapeHtml(chat.id)}</div>
+                            </div>
                         </div>
                     </label>
                 `;
@@ -206,9 +219,109 @@
             }
         }
 
+        function updateChatIcon(chatId, hasPhoto, photoUrl, error) {
+            const imgElement = document.getElementById(`chatPhoto_${chatId}`);
+            const fallbackElement = document.getElementById(`chatPhotoFallback_${chatId}`);
+            
+            if (!imgElement || !fallbackElement) {
+                console.warn(`Elements not found for chat ${chatId}`);
+                return;
+            }
+
+            if (hasPhoto && photoUrl) {
+                console.log(`Setting photo for chat ${chatId}: ${photoUrl}`);
+                
+                // Test if the image URL is accessible
+                const testImg = new Image();
+                testImg.crossOrigin = "anonymous";
+                testImg.onload = function() {
+                    console.log(`Image loaded successfully for chat ${chatId}`);
+                    imgElement.src = photoUrl;
+                };
+                testImg.onerror = function() {
+                    console.error(`Failed to load image for chat ${chatId}:`, photoUrl);
+                    // Try without crossorigin
+                    imgElement.removeAttribute('crossorigin');
+                    imgElement.src = photoUrl;
+                };
+                testImg.src = photoUrl;
+                
+            } else {
+                // No photo or error - update fallback icon
+                imgElement.classList.add('hidden');
+                fallbackElement.classList.remove('hidden');
+                
+                if (error) {
+                    console.log(`Error for chat ${chatId}: ${error}`);
+                    if (error.includes("Unauthorized")) {
+                        fallbackElement.className = "fas fa-lock text-red-400";
+                        fallbackElement.title = "Bot is not added to this chat";
+                    } else {
+                        fallbackElement.className = "fas fa-exclamation-triangle text-yellow-400";
+                        fallbackElement.title = `Error: ${error}`;
+                    }
+                } else {
+                    // No error, just no photo
+                    fallbackElement.className = "fas fa-users text-gray-400";
+                    fallbackElement.title = "No group photo available";
+                }
+            }
+        }
+
+        async function loadChatPhotos() {
+            if (!selectedBot) return;
+
+            try {
+                console.log("Loading chat photos for bot:", selectedBot);
+                
+                const response = await fetch('/api/getChatPhotos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ botId: selectedBot })
+                });
+
+                const result = await response.json();
+                console.log("Chat photos API response:", result);
+
+                if (response.ok && result.success) {
+                    chatPhotos = result.photos || {};
+                    chatErrors = result.errors || {};
+                    
+                    // Update all chat icons
+                    CHATS.forEach(chat => {
+                        const hasPhoto = chatPhotos[chat.id] !== null && chatPhotos[chat.id] !== undefined;
+                        const photoUrl = chatPhotos[chat.id];
+                        const error = chatErrors[chat.id];
+                        
+                        updateChatIcon(chat.id, hasPhoto, photoUrl, error);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading chat photos:', error);
+                
+                // On error, update all chats to show error state
+                CHATS.forEach(chat => {
+                    updateChatIcon(chat.id, false, null, "Failed to load photos");
+                });
+            }
+        }
+
         function selectBot(botId) {
             selectedBot = botId;
             updateButtonStates();
+            
+            // Reset all icons to loading state before fetching new photos
+            CHATS.forEach(chat => {
+                const fallbackElement = document.getElementById(`chatPhotoFallback_${chat.id}`);
+                if (fallbackElement) {
+                    fallbackElement.className = "fas fa-spinner fa-spin text-blue-400";
+                    fallbackElement.title = "Loading...";
+                }
+            });
+            
+            loadChatPhotos(); // Reload photos when bot changes
         }
 
         function selectChat(chatId) {
@@ -291,6 +404,10 @@
 
                 showResults(result.data);
                 showSuccess('Message sent successfully');
+                
+                // After sending a message successfully, try to load photos again
+                // as the bot might now have access to the chat
+                setTimeout(loadChatPhotos, 1000);
             } catch (error) {
                 showError('Error sending message: ' + error.message);
             } finally {
